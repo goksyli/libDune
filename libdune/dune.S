@@ -229,7 +229,7 @@ __dune_ret:
  *
  * Return code goes in %rax
  *
- * XXX: don't do relative jumps - watch out code is memcpy
+ * XXX: dont do relative jumps - watch out code is memcpy
  */
 .globl __dune_syscall
 __dune_syscall:

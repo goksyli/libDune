@@ -79,7 +79,7 @@ static DEFINE_PER_CPU(struct vmcs *, vmxarea);
 static DEFINE_PER_CPU(struct desc_ptr, host_gdt);
 static DEFINE_PER_CPU(int, vmx_enabled);
 static DEFINE_PER_CPU(struct vmx_vcpu *, local_vcpu);
-
+/*vmcs_config same as kvm*/
 static struct vmcs_config {
 	int size;
 	int order;
@@ -465,7 +465,7 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 
 	return 0;
 }
-
+/*adapted from alloc_vmcs_cpu from arch/x86/kvm/vmx.c */
 static struct vmcs *__vmx_alloc_vmcs(int cpu)
 {
 	int node = cpu_to_node(cpu);
@@ -514,7 +514,11 @@ static void vmx_setup_constant_host_state(void)
 	struct desc_ptr dt;
 
 	vmcs_writel(HOST_CR0, read_cr0() & ~X86_CR0_TS);  /* 22.2.3 */
+#if 0	
 	vmcs_writel(HOST_CR4, read_cr4());  /* 22.2.3, 22.2.5 */
+#else
+	vmcs_writel(HOST_CR4, cr4_read_shadow());
+#endif
 	vmcs_writel(HOST_CR3, read_cr3());  /* 22.2.3 */
 
 	vmcs_write16(HOST_CS_SELECTOR, __KERNEL_CS);  /* 22.2.4 */
@@ -565,7 +569,11 @@ static inline u16 vmx_read_ldt(void)
 
 static unsigned long segment_base(u16 selector)
 {
+#if 0
 	struct desc_ptr *gdt = &__get_cpu_var(host_gdt);
+#else
+	struct desc_ptr *gdt = this_cpu_ptr(&host_gdt);
+#endif
 	struct desc_struct *d;
 	unsigned long table_base;
 	unsigned long v;
@@ -601,7 +609,11 @@ static inline unsigned long vmx_read_tr_base(void)
 
 static void __vmx_setup_cpu(void)
 {
+#if 0
 	struct desc_ptr *gdt = &__get_cpu_var(host_gdt);
+#else
+	struct desc_ptr *gdt = this_cpu_ptr(&host_gdt);
+#endif
 	unsigned long sysenter_esp;
 	unsigned long tmpl;
 
@@ -627,8 +639,13 @@ static void __vmx_get_cpu_helper(void *ptr)
 
 	BUG_ON(raw_smp_processor_id() != vcpu->cpu);
 	vmcs_clear(vcpu->vmcs);
+#if 0
 	if (__get_cpu_var(local_vcpu) == vcpu)
 		__get_cpu_var(local_vcpu) = NULL;
+#else
+	if (__this_cpu_read(local_vcpu) == vcpu)
+		__this_cpu_write(local_vcpu, NULL);
+#endif
 }
 
 /**
@@ -640,10 +657,13 @@ static void __vmx_get_cpu_helper(void *ptr)
 static void vmx_get_cpu(struct vmx_vcpu *vcpu)
 {
 	int cur_cpu = get_cpu();
-
+#if 0
 	if (__get_cpu_var(local_vcpu) != vcpu) {
 		__get_cpu_var(local_vcpu) = vcpu;
-
+#else
+	if (__this_cpu_read(local_vcpu) != vcpu) {
+		__this_cpu_write(local_vcpu, vcpu);
+#endif
 		if (vcpu->cpu != cur_cpu) {
 			if (vcpu->cpu >= 0)
 				smp_call_function_single(vcpu->cpu,
@@ -878,7 +898,7 @@ static void __vmx_disable_intercept_for_msr(unsigned long *msr_bitmap, u32 msr)
 		__clear_bit(msr, msr_bitmap + 0xc00 / f); /* write-high */
 	}
 }
-
+/*adapted partly from vmx_vcpu_setup from arch/x86/kvm/vmx.c */
 static void setup_msr(struct vmx_vcpu *vcpu)
 {
 	int set[] = { MSR_LSTAR };
@@ -919,6 +939,7 @@ static void setup_msr(struct vmx_vcpu *vcpu)
 /**
  *  vmx_setup_vmcs - configures the vmcs with starting parameters
  */
+ /*adapted from vmx_vcpu_setup from arch/x86/kvm/vmx.c */
 static void vmx_setup_vmcs(struct vmx_vcpu *vcpu)
 {
 	vmcs_write16(VIRTUAL_PROCESSOR_ID, vcpu->vpid);
@@ -1079,7 +1100,11 @@ static void vmx_destroy_vcpu(struct vmx_vcpu *vcpu)
 	vmx_get_cpu(vcpu);
 	ept_sync_context(vcpu->eptp);
 	vmcs_clear(vcpu->vmcs);
+#if 0
 	__get_cpu_var(local_vcpu) = NULL;
+#else
+	__this_cpu_write(local_vcpu, NULL);
+#endif
 	vmx_put_cpu(vcpu);
 	vmx_free_vpid(vcpu);
 	vmx_free_vmcs(vcpu->vmcs);
@@ -1224,7 +1249,7 @@ static void vmx_init_syscall(void)
  * vmx_run_vcpu - launches the CPU into non-root mode
  * @vcpu: the vmx instance to launch
  */
-static int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
+int __noclone vmx_run_vcpu(struct vmx_vcpu *vcpu)
 {
 	asm(
 		/* Store host registers */
@@ -1396,7 +1421,8 @@ static void vmx_handle_syscall(struct vmx_vcpu *vcpu)
 		vcpu->regs[VCPU_REGS_RAX] = -EINVAL;
 		return;
 	}
-	
+	printk(KERN_ERR "vmx: syscall number is %llu\n",
+		vcpu->regs[VCPU_REGS_RAX]);
 	if (unlikely(vcpu->regs[VCPU_REGS_RAX] == __NR_sigaltstack ||
 		     vcpu->regs[VCPU_REGS_RAX] == __NR_iopl)) {
 		printk(KERN_INFO "vmx: got unsupported syscall\n");
@@ -1488,6 +1514,10 @@ int vmx_launch(struct dune_config *conf, int64_t *ret_code)
 		 * that we don't monitor or trap FPU usage inside
 		 * a Dune process.
 		 */
+		if( IS_ERR_OR_NULL(current)){
+			printk(KERN_ERR "vmx: Current got wrong\n");
+			break;
+		}
 		if (!__thread_has_fpu(current))
 			math_state_restore();
 
@@ -1529,7 +1559,8 @@ int vmx_launch(struct dune_config *conf, int64_t *ret_code)
 		}
 
 		ret = vmx_run_vcpu(vcpu);
-
+		printk(KERN_ERR "vmx: exit reason is %d\n",
+			ret);
 		local_irq_enable();
 
 		if (ret == EXIT_REASON_VMCALL ||
@@ -1576,8 +1607,11 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 {
 	u64 phys_addr = __pa(vmxon_buf);
 	u64 old, test_bits;
-
+#if 0
 	if (read_cr4() & X86_CR4_VMXE)
+#else
+	if (cr4_read_shadow() & X86_CR4_VMXE)
+#endif
 		return -EBUSY;
 
 	rdmsrl(MSR_IA32_FEATURE_CONTROL, old);
@@ -1591,8 +1625,11 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 		/* enable and lock */
 		wrmsrl(MSR_IA32_FEATURE_CONTROL, old | test_bits);
 	}
+#if 0
 	write_cr4(read_cr4() | X86_CR4_VMXE);
-
+#else
+	cr4_set_bits(X86_CR4_VMXE);
+#endif
 	__vmxon(phys_addr);
 	vpid_sync_vcpu_global();
 	ept_sync_global();
@@ -1609,13 +1646,22 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 static __init void vmx_enable(void *unused)
 {
 	int ret;
+#if 0
 	struct vmcs *vmxon_buf = __get_cpu_var(vmxarea);
+#else
+	struct vmcs *vmxon_buf = __this_cpu_read(vmxarea);
+#endif
 
 	if ((ret = __vmx_enable(vmxon_buf)))
 		goto failed;
 
+#if 0
 	__get_cpu_var(vmx_enabled) = 1;
 	native_store_gdt(&__get_cpu_var(host_gdt));
+#else
+	__this_cpu_write(vmx_enabled,1);
+	native_store_gdt(this_cpu_ptr(&host_gdt));
+#endif
 
 	printk(KERN_INFO "vmx: VMX enabled on CPU %d\n",
 	       raw_smp_processor_id());
@@ -1631,10 +1677,23 @@ failed:
  */
 static void vmx_disable(void *unused)
 {
-	if (__get_cpu_var(vmx_enabled)) {
+#if 0
+	if (__get_cpu_var(vmx_enabled)) 
+#else
+	if (__this_cpu_read(vmx_enabled)) 
+#endif
+	{
 		__vmxoff();
+#if 0
 		write_cr4(read_cr4() & ~X86_CR4_VMXE);
+#else
+		cr4_clear_bits(X86_CR4_VMXE);
+#endif
+#if 0
 		__get_cpu_var(vmx_enabled) = 0;
+#else
+		__this_cpu_write(vmx_enabled,0);
+#endif
 	}
 }
 
@@ -1710,12 +1769,14 @@ __init int vmx_init(void)
 	}
 
 	atomic_set(&vmx_enable_failed, 0);
+
 	if (on_each_cpu(vmx_enable, NULL, 1)) {
 		printk(KERN_ERR "vmx: timeout waiting for VMX mode enable.\n");
 		r = -EIO;
-		goto failed1; /* sadly we can't totally recover */
+		goto failed1; 
 	}
 
+/* sadly we can't totally recover */
 	if (atomic_read(&vmx_enable_failed)) {
 		r = -EBUSY;
 		goto failed2;

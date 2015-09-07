@@ -621,6 +621,7 @@ int dune_enter(void)
 	}
 
 	lpercpu = percpu;
+	printf("dune enter suceeded\n");
 	return 0;
 }
 
@@ -694,6 +695,7 @@ int dune_init(bool map_full)
 
 	setup_idt();
 
+	printf("dune init suceeded\n");
 	return 0;
 
 err:
