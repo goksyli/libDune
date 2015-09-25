@@ -178,7 +178,9 @@ static int elf_open_shs(struct dune_elf *elf)
 		return -ENOMEM;
 
 	ret = elf_read(elf, (void *) shdr, len, elf->hdr.e_shoff);
+	printf("ret is %d and len is %d\n",ret,len);
 	if (ret != len) {
+
 		printf("elf: failed to read section header table\n");
 		free(shdr);
 		return -EIO;

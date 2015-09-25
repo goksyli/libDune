@@ -25,13 +25,13 @@ KMISC_INC := /lib/modules/$(KVER)/include
 SYSCALL_TBL = 0x$(shell $(EXTRACT) sys_call_table)
 $(warning $(SYSCALL_TBL))
 ifeq ($(SYSCALL_TBL),0x)
-SYSCALL_TBL = 0xffff880001601440
+SYSCALL_TBL = $(shell cut -d" " -f4 $(M)/../syscalltable/syscall_addr.config)
 $(warning $(SYSCALL_TBL))
 endif
 DO_FORK = 0x$(shell $(EXTRACT) do_fork)
 $(warning $(DO_FORK))
-CFLAGS_vmx.o = -DSYSCALL_TBL=$(SYSCALL_TBL) -DDO_FORK=$(DO_FORK)
-
+CFLAGS_vmx.o = -DSYSCALL_TBL=$(SYSCALL_TBL) -DDO_FORK=$(DO_FORK) -DCONFIG_OLD_KERNEL
+CFLAGS_ept.o = -DCONFIG_OLD_KERNEL
 # KSRC_OUTPUT should be overridden if you are using a 2.6 kernel that
 # has it's output sent elsewhere via KBUILD_OUTPUT= or O=
 KSRC_OUTPUT := $(KSRC)

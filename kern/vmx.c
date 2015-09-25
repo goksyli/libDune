@@ -514,7 +514,7 @@ static void vmx_setup_constant_host_state(void)
 	struct desc_ptr dt;
 
 	vmcs_writel(HOST_CR0, read_cr0() & ~X86_CR0_TS);  /* 22.2.3 */
-#if 0	
+#ifdef CONFIG_OLD_KERNEL	
 	vmcs_writel(HOST_CR4, read_cr4());  /* 22.2.3, 22.2.5 */
 #else
 	vmcs_writel(HOST_CR4, cr4_read_shadow());
@@ -1607,7 +1607,7 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 {
 	u64 phys_addr = __pa(vmxon_buf);
 	u64 old, test_bits;
-#if 0
+#ifdef CONFIG_OLD_KERNEL
 	if (read_cr4() & X86_CR4_VMXE)
 #else
 	if (cr4_read_shadow() & X86_CR4_VMXE)
@@ -1625,7 +1625,7 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 		/* enable and lock */
 		wrmsrl(MSR_IA32_FEATURE_CONTROL, old | test_bits);
 	}
-#if 0
+#ifdef CONFIG_OLD_KERNEL
 	write_cr4(read_cr4() | X86_CR4_VMXE);
 #else
 	cr4_set_bits(X86_CR4_VMXE);
@@ -1684,7 +1684,7 @@ static void vmx_disable(void *unused)
 #endif
 	{
 		__vmxoff();
-#if 0
+#ifdef CONFIG_OLD_KERNEL
 		write_cr4(read_cr4() & ~X86_CR4_VMXE);
 #else
 		cr4_clear_bits(X86_CR4_VMXE);
