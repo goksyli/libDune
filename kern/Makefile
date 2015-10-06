@@ -31,7 +31,7 @@ endif
 DO_FORK = 0x$(shell $(EXTRACT) do_fork)
 $(warning $(DO_FORK))
 CFLAGS_vmx.o = -DSYSCALL_TBL=$(SYSCALL_TBL) -DDO_FORK=$(DO_FORK) -DCONFIG_OLD_KERNEL
-CFLAGS_ept.o = -DCONFIG_OLD_KERNEL
+CFLAGS_ept.o = -DCONFIG_OLD_KERNEL -DDEBUG
 # KSRC_OUTPUT should be overridden if you are using a 2.6 kernel that
 # has it's output sent elsewhere via KBUILD_OUTPUT= or O=
 KSRC_OUTPUT := $(KSRC)

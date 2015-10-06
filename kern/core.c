@@ -34,6 +34,11 @@ static int dune_enter(struct dune_config *conf, int64_t *ret)
 	return vmx_launch(conf, ret);
 }
 
+static int dune_create_vcpu(struct dune_config *conf)
+{
+	return vmx_create_vcpu_fd(conf);
+}
+
 static long dune_dev_ioctl(struct file *filp,
 			  unsigned int ioctl, unsigned long arg)
 {
@@ -78,7 +83,20 @@ static long dune_dev_ioctl(struct file *filp,
 			goto out;
 		}
 		break;
+	case DUNE_CREATE_VCPU:
+		printk(KERN_INFO "vmx: in ioctl dune_create_vcpu\n");
+		r = copy_from_user(&conf,(int __user*)arg,
+				sizeof(struct dune_config));
+		if (r) {
+			printk(KERN_INFO "vmx: in ioctl copy from user failed\n");	
+			r = -EIO;
+			goto out;
+		}
+		r = dune_create_vcpu(&conf);
 
+		if (r)
+			break;
+		break;
 	default:
 		return -ENOTTY;
 	}

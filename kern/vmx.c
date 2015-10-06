@@ -52,6 +52,8 @@
 #include <linux/percpu.h>
 #include <linux/syscalls.h>
 #include <linux/version.h>
+#include <linux/anon_inodes.h>
+
 
 #include <asm/desc.h>
 #include <asm/vmx.h>
@@ -1490,6 +1492,161 @@ static int vmx_handle_nmi_exception(struct vmx_vcpu *vcpu)
 	return -EIO;
 }
 
+
+static int dune_vcpu_release(struct inode *inode, struct file *filp)
+{
+	struct vmx_vcpu * vcpu = filp->private_data;
+
+	vmx_destroy_vcpu(vcpu);
+
+	return 0;
+}
+
+
+static int vcpu_run(struct vmx_vcpu * vcpu)
+{
+	int ret, done = 0;
+	while (1) {
+		vmx_get_cpu(vcpu);
+
+		/*
+		 * We assume that a Dune process will always use
+		 * the FPU whenever it is entered, and thus we go
+		 * ahead and load FPU state here. The reason is
+		 * that we don't monitor or trap FPU usage inside
+		 * a Dune process.
+		 */
+		if( IS_ERR_OR_NULL(current)){
+			printk(KERN_ERR "vmx: Current got wrong\n");
+			break;
+		}
+		if (!__thread_has_fpu(current))
+			math_state_restore();
+
+		local_irq_disable();
+
+		if (need_resched()) {
+			local_irq_enable();
+			vmx_put_cpu(vcpu);
+			cond_resched();
+			continue;
+		}
+
+		if (signal_pending(current)) {
+			int signr;
+			siginfo_t info;
+			uint32_t x;
+
+			local_irq_enable();
+			vmx_put_cpu(vcpu);
+
+			spin_lock_irq(&current->sighand->siglock);
+			signr = dequeue_signal(current, &current->blocked,
+					       &info);
+			spin_unlock_irq(&current->sighand->siglock);
+			if (!signr)
+				continue;
+
+			if (signr == SIGKILL) {
+				printk(KERN_INFO "vmx: got sigkill, dying");
+				vcpu->ret_code = ((ENOSYS) << 8);
+				break;
+			}
+
+			x  = DUNE_SIGNAL_INTR_BASE + signr;
+			x |= INTR_INFO_VALID_MASK;
+
+			vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, x);
+			continue;
+		}
+
+		ret = vmx_run_vcpu(vcpu);
+		printk(KERN_ERR "vmx: exit reason is %d\n",
+			ret);
+		local_irq_enable();
+
+		if (ret == EXIT_REASON_VMCALL ||
+		    ret == EXIT_REASON_CPUID) {
+			vmx_step_instruction();
+		}
+
+		vmx_put_cpu(vcpu);
+
+		if (ret == EXIT_REASON_VMCALL)
+			vmx_handle_syscall(vcpu);
+		else if (ret == EXIT_REASON_CPUID)
+			vmx_handle_cpuid(vcpu);
+		else if (ret == EXIT_REASON_EPT_VIOLATION)
+			done = vmx_handle_ept_violation(vcpu);
+		else if (ret == EXIT_REASON_EXCEPTION_NMI) {
+			if (vmx_handle_nmi_exception(vcpu))
+				done = 1;
+		} else if (ret != EXIT_REASON_EXTERNAL_INTERRUPT) {
+			printk(KERN_INFO "unhandled exit: reason %d, exit qualification %x\n",
+			       ret, vmcs_read32(EXIT_QUALIFICATION));
+			vmx_dump_cpu(vcpu);
+			done = 1;
+		}
+
+		if (done || vcpu->shutdown)
+			break;
+	}
+/*
+	printk(KERN_ERR "vmx: destroying VCPU (VPID %d)\n",
+	       vcpu->vpid);
+*/
+/*	*ret_code = vcpu->ret_code; */
+/*
+	vmx_destroy_vcpu(vcpu);
+*/
+	return 0;
+}
+
+static long dune_vcpu_ioctl(struct file *filp,
+							unsigned int ioctl, unsigned long arg)
+{
+	struct vmx_vcpu *vcpu = filp->private_data;
+	void __user *argp = (void __user *)arg;
+	int r;
+	printk(KERN_ERR "vmx: in vcpu fd\n");
+
+	switch(ioctl){
+	case VCPU_RUN:
+		r = vcpu_run(vcpu);
+		break;
+	default:
+		r = -EIO;
+	}
+
+	return r;
+}
+
+static struct file_operations dune_vcpu_fops = {
+	.release = dune_vcpu_release,
+	.unlocked_ioctl = dune_vcpu_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl	= dune_vcpu_ioctl,
+#endif
+	.llseek = noop_llseek,
+};
+
+/**
+*
+*/
+int vmx_create_vcpu_fd(struct dune_config * conf)
+{
+	int ret;
+	struct vmx_vcpu * vcpu = vmx_create_vcpu(conf);
+	if(!vcpu){
+		printk(KERN_ERR "vmx: create vcpu failed\n");
+		return -ENOMEM;
+	}
+	ret = anon_inode_getfd("dune-vcpu",&dune_vcpu_fops,vcpu,
+			O_RDWR | O_CLOEXEC);
+	
+
+	return ret;	
+}
 /**
  * vmx_launch - the main loop for a VMX Dune process
  * @conf: the launch configuration

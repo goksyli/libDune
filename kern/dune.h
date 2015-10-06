@@ -14,7 +14,8 @@
 #define DUNE_ENTER	_IOR(DUNE_MINOR, 0x01, struct dune_config)
 #define DUNE_GET_SYSCALL _IO(DUNE_MINOR, 0x02)
 #define DUNE_GET_LAYOUT	_IOW(DUNE_MINOR, 0x03, struct dune_layout)
-
+#define DUNE_CREATE_VCPU _IOR(DUNE_MINOR, 0x04, struct dune_config)
+#define VCPU_RUN _IO(DUNE_MINOR, 0x05)
 // XXX: Must match libdune/dune.h
 #define DUNE_SIGNAL_INTR_BASE 200
 

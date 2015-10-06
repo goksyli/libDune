@@ -564,23 +564,43 @@ static void map_stack(void)
 	dune_procmap_iterate(map_stack_cb);
 }
 
+static int create_vcpu(struct dune_config *conf)
+{
+	int ret;
+
+	ret = ioctl(dune_fd,DUNE_CREATE_VCPU,conf);
+
+	return ret;
+}
+
 static int do_dune_enter(struct dune_percpu *percpu)
 {
 	struct dune_config conf;
 	int ret;
-
+	int vcpu_fd;
 	map_stack();
 
 	conf.rip = (__u64) &__dune_ret;
 	conf.rsp = 0;
 	conf.cr3 = (physaddr_t) pgroot;
-
+#ifdef CONFIG_NEW 
+	vcpu_fd = create_vcpu(&conf);
+	if( vcpu_fd < 0 ){
+		printf("dune: create create_vcpu failed, vcpu_fd is %d\n", vcpu_fd);
+		return -EIO;
+	}
+	ret = __dune_enter(vcpu_fd, &conf);
+	if (ret) {
+		printf("dune: entry to Dune mode failed, ret is %d\n", ret);
+		return -EIO;
+	}
+#else
 	ret = __dune_enter(dune_fd, &conf);
 	if (ret) {
 		printf("dune: entry to Dune mode failed, ret is %d\n", ret);
 		return -EIO;
 	}
-
+#endif
 	ret = dune_boot(percpu);
 	if (ret) {
 		printf("dune: problem while booting, unrecoverable\n");
@@ -624,6 +644,8 @@ int dune_enter(void)
 	printf("dune enter suceeded\n");
 	return 0;
 }
+
+
 
 /**
  * dune_init - initializes libdune

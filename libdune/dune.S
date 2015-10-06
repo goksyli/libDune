@@ -195,7 +195,11 @@ __dune_enter:
 	SAVE_REST
 	movq	%rsp, DUNE_CFG_RSP(%rsi)
 	movq	%rsi, %rdx
-	movq	$0x8020e901, %rsi /* XXX DUNE_ENTER */
+#ifndef CONFIG_NEW
+	movq	$0x8020e901, %rsi  /* XXX DUNE_ENTER */
+#else
+	movq	$0x0000e905, %rsi /* XXX VCPU_RUN */
+#endif
 	movq	$16, %rax /* __NR_ioctl */
 	syscall
 
