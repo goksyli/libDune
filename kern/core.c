@@ -94,8 +94,10 @@ static long dune_dev_ioctl(struct file *filp,
 		}
 		r = dune_create_vcpu(&conf);
 
-		if (r)
+		if (r <= 0){
 			break;
+		}
+		
 		break;
 	default:
 		return -ENOTTY;

@@ -585,7 +585,7 @@ static int do_dune_enter(struct dune_percpu *percpu)
 	conf.cr3 = (physaddr_t) pgroot;
 #ifdef CONFIG_NEW 
 	vcpu_fd = create_vcpu(&conf);
-	if( vcpu_fd < 0 ){
+	if( vcpu_fd <= 0 ){
 		printf("dune: create create_vcpu failed, vcpu_fd is %d\n", vcpu_fd);
 		return -EIO;
 	}

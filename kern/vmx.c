@@ -821,6 +821,7 @@ static void vmx_setup_initial_guest_state(struct dune_config *conf)
 	vmcs_writel(GUEST_IDTR_BASE, 0);
 	vmcs_writel(GUEST_IDTR_LIMIT, 0);
 	vmcs_writel(GUEST_RIP, conf->rip);
+	printk(KERN_ERR "conf rsp is %lx\n",conf->rsp);
 	vmcs_writel(GUEST_RSP, conf->rsp);
 	vmcs_writel(GUEST_RFLAGS, 0x02);
 	vmcs_writel(GUEST_DR7, 0);
@@ -1385,6 +1386,7 @@ static void vmx_step_instruction(void)
 
 static int vmx_handle_ept_violation(struct vmx_vcpu *vcpu)
 {
+	static int count = 0;
 	unsigned long gva, gpa;
 	int exit_qual, ret;
 
@@ -1413,7 +1415,9 @@ static int vmx_handle_ept_violation(struct vmx_vcpu *vcpu)
 		vcpu->ret_code = ((EFAULT) << 8);
 		vmx_dump_cpu(vcpu);
 	}
-
+	if( count++ <= 6 ){
+		vmx_dump_cpu(vcpu);
+	}
 	return ret;
 }
 
@@ -1503,9 +1507,14 @@ static int dune_vcpu_release(struct inode *inode, struct file *filp)
 }
 
 
-static int vcpu_run(struct vmx_vcpu * vcpu)
+static int vcpu_run(struct vmx_vcpu * vcpu,struct dune_config* confp)
 {
 	int ret, done = 0;
+
+	vmx_get_cpu(vcpu);
+	vmcs_writel(GUEST_RSP, confp->rsp);
+	vmx_put_cpu(vcpu);
+
 	while (1) {
 		vmx_get_cpu(vcpu);
 
@@ -1591,14 +1600,14 @@ static int vcpu_run(struct vmx_vcpu * vcpu)
 		if (done || vcpu->shutdown)
 			break;
 	}
-/*
+
 	printk(KERN_ERR "vmx: destroying VCPU (VPID %d)\n",
 	       vcpu->vpid);
-*/
-/*	*ret_code = vcpu->ret_code; */
-/*
+
+	confp->ret = vcpu->ret_code; 
+
 	vmx_destroy_vcpu(vcpu);
-*/
+
 	return 0;
 }
 
@@ -1608,21 +1617,36 @@ static long dune_vcpu_ioctl(struct file *filp,
 	struct vmx_vcpu *vcpu = filp->private_data;
 	void __user *argp = (void __user *)arg;
 	int r;
+	struct dune_config conf;
 	printk(KERN_ERR "vmx: in vcpu fd\n");
 
 	switch(ioctl){
 	case VCPU_RUN:
-		r = vcpu_run(vcpu);
+		r = copy_from_user(&conf, (int __user *) argp,
+				   sizeof(struct dune_config));
+		if (r) {
+			r = -EIO;
+			goto out;
+		}
+		r = vcpu_run(vcpu,&conf);
+		if( r )
+			break;
+		r = copy_to_user((void __user *)argp, &conf,
+				 sizeof(struct dune_config));
+		if (r) {
+			r = -EIO;
+			goto out;
+		}	
 		break;
 	default:
-		r = -EIO;
+		return -ENOTTY;
 	}
-
+out:
 	return r;
 }
 
 static struct file_operations dune_vcpu_fops = {
-	.release = dune_vcpu_release,
+//	.release = dune_vcpu_release,
 	.unlocked_ioctl = dune_vcpu_ioctl,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl	= dune_vcpu_ioctl,
@@ -1643,7 +1667,11 @@ int vmx_create_vcpu_fd(struct dune_config * conf)
 	}
 	ret = anon_inode_getfd("dune-vcpu",&dune_vcpu_fops,vcpu,
 			O_RDWR | O_CLOEXEC);
-	
+	/* in linux code ret == 0 is not an error*/
+	if( ret <= 0 ){
+		printk(KERN_ERR "vmx: create vcpu fd failed\n");
+		return ret;	
+	}
 
 	return ret;	
 }

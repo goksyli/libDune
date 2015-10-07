@@ -1,6 +1,6 @@
 LIBC	= eglibc-2.14/eglibc-build/libc.so
-SUBDIRS	= kern libdune bench test apps
-
+SUBDIRS	= kern libdune test
+#SUBDIRS += bench apps
 all: $(SUBDIRS)
 libc: $(LIBC)
 
