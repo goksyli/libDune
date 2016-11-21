@@ -1,8 +1,8 @@
 #ifndef __DUNE_COMPAT_H_
 #define __DUNE_COMPAT_H_
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0)
-#include <asm/fpu-internal.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,2,0)
+#include <asm/fpu/internal.h>
 #endif
 
 #if !defined(VMX_EPT_AD_BIT)

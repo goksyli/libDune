@@ -6,7 +6,7 @@ SYM=$1
 
 extract()
 {
-	cat $SYSTEM_MAP | egrep " $SYM\$" | cut -d" " -f1
+	sudo cat $SYSTEM_MAP | egrep " $SYM\$" | cut -d" " -f1
 	exit 0
 }
 

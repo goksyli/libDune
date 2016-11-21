@@ -44,7 +44,7 @@
 #include <linux/highmem.h>
 #include <linux/sched.h>
 #include <linux/moduleparam.h>
-#include <linux/ftrace_event.h>
+#include <linux/trace_events.h>
 #include <linux/slab.h>
 #include <linux/tboot.h>
 #include <linux/init.h>
@@ -59,7 +59,7 @@
 #include <asm/vmx.h>
 #include <asm/unistd_64.h>
 #include <asm/virtext.h>
-#include <asm/i387.h>
+#include <asm/fpu/api.h>
 
 #include "dune.h"
 #include "vmx.h"
@@ -474,7 +474,7 @@ static struct vmcs *__vmx_alloc_vmcs(int cpu)
 	struct page *pages;
 	struct vmcs *vmcs;
 
-	pages = alloc_pages_exact_node(node, GFP_KERNEL, vmcs_config.order);
+	pages = alloc_pages_node(node, GFP_KERNEL, vmcs_config.order);
 	if (!pages)
 		return NULL;
 	vmcs = page_address(pages);
@@ -516,11 +516,7 @@ static void vmx_setup_constant_host_state(void)
 	struct desc_ptr dt;
 
 	vmcs_writel(HOST_CR0, read_cr0() & ~X86_CR0_TS);  /* 22.2.3 */
-#ifdef CONFIG_OLD_KERNEL	
-	vmcs_writel(HOST_CR4, read_cr4());  /* 22.2.3, 22.2.5 */
-#else
 	vmcs_writel(HOST_CR4, cr4_read_shadow());
-#endif
 	vmcs_writel(HOST_CR3, read_cr3());  /* 22.2.3 */
 
 	vmcs_write16(HOST_CS_SELECTOR, __KERNEL_CS);  /* 22.2.4 */
@@ -868,7 +864,7 @@ static void vmx_setup_initial_guest_state(struct dune_config *conf)
 
 	/* guest TSS */
 	vmcs_writel(GUEST_TR_BASE, 0);
-	vmcs_writel(GUEST_TR_AR_BYTES, 0x0080 | AR_TYPE_BUSY_64_TSS);
+	vmcs_writel(GUEST_TR_AR_BYTES, 0x0080 | VMX_AR_TYPE_BUSY_64_TSS);
 	vmcs_writel(GUEST_TR_LIMIT, 0xff);
 
 	/* initialize sysenter */
@@ -1509,6 +1505,7 @@ static int dune_vcpu_release(struct inode *inode, struct file *filp)
 
 static int vcpu_run(struct vmx_vcpu * vcpu,struct dune_config* confp)
 {
+    struct fpu *fpu = &current->thread.fpu;
 	int ret, done = 0;
 
 	vmx_get_cpu(vcpu);
@@ -1529,8 +1526,8 @@ static int vcpu_run(struct vmx_vcpu * vcpu,struct dune_config* confp)
 			printk(KERN_ERR "vmx: Current got wrong\n");
 			break;
 		}
-		if (!__thread_has_fpu(current))
-			math_state_restore();
+		if (!fpu->fpregs_active)
+			fpu__restore(fpu);
 
 		local_irq_disable();
 
@@ -1681,6 +1678,7 @@ int vmx_create_vcpu_fd(struct dune_config * conf)
  */
 int vmx_launch(struct dune_config *conf, int64_t *ret_code)
 {
+    struct fpu *fpu = &current->thread.fpu;
 	int ret, done = 0;
 	struct vmx_vcpu *vcpu = vmx_create_vcpu(conf);
 	if (!vcpu)
@@ -1703,8 +1701,8 @@ int vmx_launch(struct dune_config *conf, int64_t *ret_code)
 			printk(KERN_ERR "vmx: Current got wrong\n");
 			break;
 		}
-		if (!__thread_has_fpu(current))
-			math_state_restore();
+		if (!fpu->fpregs_active)
+			fpu__restore(fpu);
 
 		local_irq_disable();
 
@@ -1792,11 +1790,7 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 {
 	u64 phys_addr = __pa(vmxon_buf);
 	u64 old, test_bits;
-#ifdef CONFIG_OLD_KERNEL
-	if (read_cr4() & X86_CR4_VMXE)
-#else
 	if (cr4_read_shadow() & X86_CR4_VMXE)
-#endif
 		return -EBUSY;
 
 	rdmsrl(MSR_IA32_FEATURE_CONTROL, old);
@@ -1810,11 +1804,7 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 		/* enable and lock */
 		wrmsrl(MSR_IA32_FEATURE_CONTROL, old | test_bits);
 	}
-#ifdef CONFIG_OLD_KERNEL
-	write_cr4(read_cr4() | X86_CR4_VMXE);
-#else
 	cr4_set_bits(X86_CR4_VMXE);
-#endif
 	__vmxon(phys_addr);
 	vpid_sync_vcpu_global();
 	ept_sync_global();
@@ -1869,11 +1859,7 @@ static void vmx_disable(void *unused)
 #endif
 	{
 		__vmxoff();
-#ifdef CONFIG_OLD_KERNEL
-		write_cr4(read_cr4() & ~X86_CR4_VMXE);
-#else
 		cr4_clear_bits(X86_CR4_VMXE);
-#endif
 #if 0
 		__get_cpu_var(vmx_enabled) = 0;
 #else

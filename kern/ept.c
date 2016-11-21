@@ -669,16 +669,10 @@ static void ept_mmu_notifier_change_pte(struct mmu_notifier *mn,
 	 */
 	ept_invalidate_page(vcpu, mm, address);
 }
-#ifdef CONFIG_OLD_KERNEL
-static int ept_mmu_notifier_clear_flush_young(struct mmu_notifier *mn,
-					      struct mm_struct *mm,
-					      unsigned long address)
-#else
 static int ept_mmu_notifier_clear_flush_young(struct mmu_notifier *mn,
 					      struct mm_struct *mm,
 					      unsigned long address,
 					      unsigned long end)
-#endif
 {
 	struct vmx_vcpu *vcpu = mmu_notifier_to_vmx(mn);
 
